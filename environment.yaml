@@ -1,0 +1,18 @@
+name: AllShowers
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - h5py=3.14
+  - matplotlib=3.10
+  - numpy=2.3
+  - pyyaml=6.0
+  - pytorch=2.8
+  - ipykernel=6.30
+  - ruff=0.12
+  - pre_commit=4.3
+  - pip
+  - pip:
+      - pot==0.9.5
+      - rangerlite>=1.0,<1.1
+      - showerdata>=0.6,<0.7

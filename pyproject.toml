@@ -1,0 +1,46 @@
+[project]
+name = "allshowers"
+version = "1.0.0"
+description = "A point cloud CNF-Transformer to generate any Shower"
+readme = "README.md"
+authors = [
+    {name = "Thorsten Buss", email = "Thorsten.Buss@uni-hamburg.de"},
+]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = "==3.13.*"
+dependencies = [
+    "h5py>=3.14.0,<3.15.0",
+    "matplotlib>=3.10.0,<3.11.0",
+    "numpy>=2.3.0,<2.4.0",
+    "pyyaml>=6.0.0,<6.1.0",
+    "torch>=2.8.0,<2.9.0",
+    "rangerlite>=1.0.0,<1.1.0",
+    "showerdata>=0.6.0,<0.7.0",
+    "pot==0.9.5",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel==6.30.1",
+    "ruff==0.12.10",
+    "pre_commit==4.3.0",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["allshowers"]
+
+[tool.ruff]
+target-version = "py313"
+fix = true
+
+[tool.ruff.lint]
+extend-select = ["C4", "I", "SIM", "UP"]
