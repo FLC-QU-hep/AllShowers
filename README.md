@@ -84,7 +84,7 @@ python allshowers/generator.py -n <num_samples> --num-timesteps 16 --solver midp
 here,
 - `<num_samples>` is the number of samples you want to generate
 - `<run_name>` is the name of the training run you want to use for generation, run `ls results/` to see all available runs
-- `<condition>` condition is a path to a `showerdata` file containing the incident particles and the number of points per layer, you can generate such a file with the [PointCountFM](https://github.com/FLC-QU-hep/PointCountFM) or use the test dataset to take this information from Geant4.
+- `<condition>` condition is a path to a `showerdata` file containing the incident particles and the number of points per layer, you can generate such a file with the [PointCountFM](https://github.com/FLC-QU-hep/PointCountFM) or use the test dataset to take this information from Geant4. If you use the geant4 data, you have to calculate the number of points per layer first: `showerdata add-observables data/showers.h5  --num-layers 78`.
 
 The generated samples will be stored in `results/<run_name>/samples00.h5`.
 
