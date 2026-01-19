@@ -42,7 +42,7 @@ pre-commit install
 This will automatically format your code when you create a git commit.
 
 ### 3. Download datasets
-The foll datasets will appear on Zenodo soon. For now, you can run a very short training on a small dummy dataset:
+The full datasets will appear on Zenodo soon. For now, you can run a very short training on a small dummy dataset:
 ```bash
 mkdir data
 curl -o data/showers.h5 https://syncandshare.desy.de/public.php/dav/files/tCMX2mFexPpmZC4
