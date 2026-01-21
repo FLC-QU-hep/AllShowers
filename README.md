@@ -1,4 +1,11 @@
 # AllShowers
+[![arXiv](https://img.shields.io/badge/arXiv-2601.11716-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2601.11716)
+[![Python Version](https://img.shields.io/badge/Python_3.13-306998?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch Version](https://img.shields.io/badge/PyTorch_2.8-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/FLC-QU-hep/AllShowers?tab=MIT-1-ov-file)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/FLC-QU-hep/AllShowers/pre_commit.yaml?label=pre-commit&logo=github)](https://github.com/FLC-QU-hep/AllShowers/actions/workflows/pre_commit.yaml)
+[![Tests](https://img.shields.io/github/actions/workflow/status/FLC-QU-hep/AllShowers/test.yaml?label=tests&logo=github)](https://github.com/FLC-QU-hep/AllShowers/actions/workflows/test.yaml)
+
 A conditional flow matching model with transformer architecture for calorimeter shower point clouds.
 
 
@@ -185,5 +192,5 @@ For questions/comments about the code contact: thorsten.buss@uni-hamburg.de
 This code was written for the paper:
 
 **AllShowers: One model for all calorimeter showers**<br/>
-[https://arxiv.org/abs/2601.xxxxx](https://arxiv.org/abs/2601.xxxxx)<br/>
+[https://arxiv.org/abs/2601.11716](https://arxiv.org/abs/2601.11716)<br/>
 *Thorsten Buss, Henry Day-Hall, Frank Gaede, Gregor Kasieczka and Katja Krüger*
