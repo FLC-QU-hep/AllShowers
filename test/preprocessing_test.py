@@ -50,10 +50,9 @@ class TestDataUtil(unittest.TestCase):
 
     def test_standard_scaler(self):
         scaler = preprocessing.StandardScaler((1, 10))
-        x = torch.rand(10, 10)
+        x = torch.rand(100, 10)
         scaler.fit(x)
         x_ = (x - x.mean(dim=0, keepdim=True)) / x.std(dim=0, keepdim=True)
-        x_[torch.isnan(x_)] = 0.0
         self.assertTrue(torch.allclose(x_, scaler.forward(x)))
         self.assertTrue(torch.allclose(x, scaler.inverse(scaler.forward(x))))
 
