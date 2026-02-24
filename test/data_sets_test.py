@@ -1,4 +1,6 @@
+import argparse
 import os
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -10,6 +12,11 @@ from allshowers import data_sets
 
 
 class TestDataSets(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.data_path = "/data/dust/user/mmozzani/granularity_showers_regular/x16/photons_10_90GeV_regular_x16_test.h5"
+        cls.stop = 100
+
     def test_batched_histogram(self):
         layer = torch.tensor(
             [
@@ -38,7 +45,10 @@ class TestDataSets(unittest.TestCase):
         self.assertTrue(torch.all(num_points_per_layer == expected))
 
     def test_load_and_prepare(self):
-        data = data_sets.load_and_prepare(path="data/showers.h5", stop=100)
+        data = data_sets.load_and_prepare(
+            path=self.data_path,
+            stop=100,
+        )
         self.assertEqual(type(data), dict)
         self.assertEqual(
             set(data.keys()),
@@ -55,7 +65,7 @@ class TestDataSets(unittest.TestCase):
 
     def test_load_and_prepare_with_noise(self):
         data = data_sets.load_and_prepare(
-            path="data/showers.h5",
+            path=self.data_path,
             stop=100,
             return_noise=True,
         )
@@ -76,7 +86,7 @@ class TestDataSets(unittest.TestCase):
 
     def test_get_data_loaders(self):
         config_dataset = {
-            "path": "data/showers.h5",
+            "path": self.data_path,
             "samples_energy_trafo": [
                 ["Log", {}],
                 ["Affine", {"scale": 2.0, "shift": 1.0}],
@@ -122,7 +132,11 @@ class TestDataSets(unittest.TestCase):
             self.assertTrue(isinstance(element, nn.Module))
 
     def test_load_data(self):
-        data = data_sets.load_data("data/showers.h5", start=0, stop=50)
+        data = data_sets.load_data(
+            self.data_path,
+            start=0,
+            stop=50,
+        )
         self.assertEqual(type(data), dict)
         self.assertEqual(
             set(data.keys()), {"shower", "energy", "direction", "pdg", "noise"}
@@ -132,7 +146,10 @@ class TestDataSets(unittest.TestCase):
 
     def test_load_data_with_noise(self):
         data = data_sets.load_data(
-            "data/showers.h5", start=0, stop=50, return_noise=True
+            self.data_path,
+            start=0,
+            stop=50,
+            return_noise=True,
         )
         self.assertIsNotNone(data["noise"])
         self.assertEqual(data["noise"].shape[0], 50)
@@ -166,20 +183,23 @@ class TestDataSets(unittest.TestCase):
 
     def test_load_and_prepare_with_direction(self):
         data = data_sets.load_and_prepare(
-            path="data/showers.h5",
+            path=self.data_path,
             stop=100,
             return_direction=True,
         )
         self.assertEqual(data["cond"].shape[1], 4)
 
     def test_load_and_prepare_mask_application(self):
-        data = data_sets.load_and_prepare(path="data/showers.h5", stop=50)
+        data = data_sets.load_and_prepare(
+            path=self.data_path,
+            stop=50,
+        )
         x_masked = data["x"][~data["mask"].repeat(1, 1, 3)]
         self.assertEqual(torch.count_nonzero(x_masked), 0)
 
     def test_get_data_loaders_split(self):
         config_dataset = {
-            "path": "data/showers.h5",
+            "path": self.data_path,
             "stop": 100,
             "val_len": 20,
         }
@@ -191,7 +211,7 @@ class TestDataSets(unittest.TestCase):
 
     def test_get_data_loaders_split_warning(self):
         config_dataset = {
-            "path": "data/showers.h5",
+            "path": self.data_path,
             "stop": 40,
             "val_len": 30,
         }
@@ -204,7 +224,7 @@ class TestDataSets(unittest.TestCase):
 
     def test_get_data_loaders_transformations(self):
         config_dataset = {
-            "path": "data/showers.h5",
+            "path": self.data_path,
             "samples_energy_trafo": [["Identity", {}]],
             "samples_coordinate_trafo": [["Identity", {}]],
             "cond_trafo": [["Identity", {}]],
@@ -214,7 +234,10 @@ class TestDataSets(unittest.TestCase):
         self.assertTrue(all(isinstance(t, nn.Module) for t in trafos.values()))
 
     def test_get_data_loaders_batch_properties(self):
-        config_dataset = {"path": "data/showers.h5", "stop": 25}
+        config_dataset = {
+            "path": self.data_path,
+            "stop": 25,
+        }
         train_loader, _, _ = data_sets.get_data_loaders(config_dataset, 10)
         for batch in train_loader:
             self.assertLessEqual(batch["x"].shape[0], 10)
@@ -222,7 +245,11 @@ class TestDataSets(unittest.TestCase):
             break
 
     def test_get_data_loaders_distributed(self):
-        config_dataset = {"path": "data/showers.h5", "stop": 50, "val_len": 10}
+        config_dataset = {
+            "path": self.data_path,
+            "stop": 50,
+            "val_len": 10,
+        }
         with (
             patch("torch.distributed.barrier"),
             patch("builtins.print"),
@@ -257,12 +284,18 @@ class TestDataSets(unittest.TestCase):
         self.assertEqual(val_samples_1, 0)
 
     def test_load_and_prepare_layer_encoding(self):
-        data = data_sets.load_and_prepare(path="data/showers.h5", stop=50)
+        data = data_sets.load_and_prepare(
+            path=self.data_path,
+            stop=50,
+        )
         self.assertEqual(data["layer"].dtype, torch.int64)
         self.assertTrue(torch.all(data["layer"] >= 0))
 
     def test_load_and_prepare_num_points_default(self):
-        data = data_sets.load_and_prepare(path="data/showers.h5", stop=50)
+        data = data_sets.load_and_prepare(
+            path=self.data_path,
+            stop=50,
+        )
         self.assertEqual(data["num_points"].shape[0], 50)
         self.assertEqual(data["num_points"].dtype, torch.int32)
 

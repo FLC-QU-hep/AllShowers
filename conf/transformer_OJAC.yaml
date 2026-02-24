@@ -1,7 +1,7 @@
 run_name: CNF-Transformer
 
 data:
-  path: data/shower_level.h5
+  path: /data/dust/user/mmozzani/granularity_showers_regular/x16/photons_10_90GeV_regular_x16_train_validation.h5
   samples_energy_trafo:
     - [Log, {alpha: 0.0}]
     - [StandardScaler, {shape: [1, 1]}]
@@ -15,7 +15,7 @@ data:
   val_len: 50000
 
 model:
-  num_layers: 78
+  num_layers: 30
   dim_inputs: [3, 6, 4]
   dim_embedding: 64
   num_head: 4
