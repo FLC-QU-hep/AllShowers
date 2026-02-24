@@ -56,9 +56,8 @@ torchrun --nnodes={num_nodes:d} --nproc_per_node=$num_gpus --rdzv_id=100\\
     allshowers/train.py --fast-dev-run --ddp {config:s}
 
 echo "test completed."
-
 echo "starting full training. "
- 
+
 torchrun --nnodes={num_nodes:d} --nproc_per_node=$num_gpus --rdzv_id=100\\
     --rdzv_backend=c10d --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT\\
     allshowers/train.py --ddp {config:s}
