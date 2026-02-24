@@ -1,6 +1,4 @@
-import argparse
 import os
-import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,7 +12,7 @@ from allshowers import data_sets
 class TestDataSets(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.data_path = "/data/dust/user/mmozzani/granularity_showers_regular/x16/photons_10_90GeV_regular_x16_test.h5"
+        cls.data_path = "data/showers.h5"
         cls.stop = 100
 
     def test_batched_histogram(self):

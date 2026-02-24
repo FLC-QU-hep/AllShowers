@@ -1,7 +1,7 @@
 run_name: CNF-Transformer
 
 data:
-  path: data/shower_level.h5
+  path: data/showers.h5
   samples_energy_trafo:
     - [Log, {alpha: 0.0}]
     - [StandardScaler, {shape: [1, 1]}]
