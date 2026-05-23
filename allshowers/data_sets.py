@@ -139,7 +139,7 @@ def to_label_tensor(
     if max(pdg.shape, default=1) != pdg.numel():
         raise ValueError("pdg must be a 1D tensor.")
     pdg = pdg.view(-1)
-    label_tensor = torch.zeros(pdg.shape[0], dtype=torch.int64)
+    label_tensor = torch.zeros(pdg.shape[0], dtype=torch.int64, device=pdg.device)
     for i, label in enumerate(label_list):
         label_tensor[pdg == label] = i
     return label_tensor

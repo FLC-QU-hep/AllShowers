@@ -34,12 +34,7 @@ pip install --group dev
 If you do not have python 3.13 installed, you can try with a different version, but be aware that the code has only been tested with python 3.13.
 
 #### Using conda (option 3)
-```bash
-conda env create -f environment.yaml
-conda activate AllShowers
-pip install -e .
-```
-This will install all large packages from conda-forge and some smaller, pure Python packages that are not available from via conda, from PyPI. The last line should only install AllShowers itself.
+We do not provide a conda environment file, but you can try to create a conda environment and install the dependencies with pip.
 
 #### pre-commit hooks
 After installing the dependencies, you can install the pre commit hooks with:

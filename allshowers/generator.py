@@ -24,7 +24,6 @@ class Generator(nn.Module):
         self,
         run_dir: str,
         num_timesteps: int = 200,
-        compile: bool = False,
         solver: str = "heun",
         resize_factor: float = 1.0,
     ) -> None:
@@ -39,7 +38,6 @@ class Generator(nn.Module):
             trafo_file = os.path.join(run_dir, "preprocessing/trafos-all.pt")
         self.result_dir = run_dir
         self.num_timesteps = num_timesteps
-        self.do_compile = compile
         self.resize_factor = resize_factor
 
         with open(run_params_file) as f:
@@ -61,18 +59,11 @@ class Generator(nn.Module):
         network = transformer.Transformer(**params)
         state_dict = torch.load(state_file, map_location="cpu", weights_only=True)
         trained_compiled = any("_orig_mod." in key for key in state_dict)
-        if trained_compiled and not self.do_compile:
+        if trained_compiled:
             for k in list(state_dict.keys()):
                 if "_orig_mod." in k:
                     new_k = k.replace("_orig_mod.", "")
                     state_dict[new_k] = state_dict.pop(k)
-        elif not trained_compiled and self.do_compile:
-            for k in list(state_dict.keys()):
-                if "network." in k:
-                    new_k = k.replace("network.", "network._orig_mod.")
-                    state_dict[new_k] = state_dict.pop(k)
-        if self.do_compile:
-            network = torch.compile(network)
         self.flow = fm.CNF(network, **flow_config)  # type: ignore
         self.flow.load_state_dict(state_dict)
 
@@ -99,23 +90,30 @@ class Generator(nn.Module):
             )
         else:
             condition = self.cond_trafo(energies)
-        layer = torch.zeros((condition.shape[0], self.max_points, 1), dtype=torch.int32)
-        mask = torch.zeros((condition.shape[0], self.max_points, 1), dtype=torch.bool)
+        total_points = torch.sum(num_points, dim=1)
+        max_total_points = min(int(torch.max(total_points).item()), self.max_points)
+        max_total_points = 128 * (
+            (max_total_points + 127) // 128
+        )  # round up to multiple of 128
+        layer = torch.zeros(
+            (condition.shape[0], max_total_points, 1), dtype=torch.int32
+        )
+        mask = torch.zeros((condition.shape[0], max_total_points, 1), dtype=torch.bool)
         for i in range(condition.shape[0]):
-            total_points = torch.sum(num_points[i])
+            total_points_l = int(total_points[i].item())
             layer_i = torch.repeat_interleave(num_points[i])
-            if total_points > self.max_points:
+            if total_points_l > max_total_points:
                 warnings.warn(
-                    f"num points {total_points} exceeds max points {self.max_points}, truncating"
+                    f"num points {total_points_l} exceeds max points {max_total_points}, truncating"
                 )
-                total_points = self.max_points
-                layer_i = layer_i[: self.max_points]
-            layer[i, :total_points, 0] = layer_i
-            mask[i, :total_points, 0] = True
+                total_points_l = max_total_points
+                layer_i = layer_i[:max_total_points]
+            layer[i, :total_points_l, 0] = layer_i
+            mask[i, :total_points_l, 0] = True
         layer = layer.to(condition.device)
         mask = mask.to(condition.device)
         raw_samples = self.flow.sample(
-            shape=(condition.shape[0], self.max_points, 3),
+            shape=(condition.shape[0], max_total_points, 3),
             num_timesteps=self.num_timesteps,
             cond=condition,
             num_points=num_points,
@@ -126,10 +124,14 @@ class Generator(nn.Module):
         samples = torch.zeros(
             (condition.shape[0], self.max_points, 4), device=raw_samples.device
         )
-        samples[:, :, :2] = self.samples_coordinate_trafo.inverse(raw_samples[:, :, :2])
-        samples[:, :, 2] = layer.squeeze(2)
-        samples[:, :, 3] = self.samples_energy_trafo.inverse(raw_samples[:, :, 2])
-        samples[~mask.repeat(1, 1, 4)] = 0
+        samples[:, :max_total_points, :2] = self.samples_coordinate_trafo.inverse(
+            raw_samples[:, :, :2]
+        )
+        samples[:, :max_total_points, 2] = layer.squeeze(2)
+        samples[:, :max_total_points, 3] = self.samples_energy_trafo.inverse(
+            raw_samples[:, :, 2]
+        )
+        samples[:, :max_total_points][~mask.repeat(1, 1, 4)] = 0
         return samples
 
 
@@ -261,16 +263,18 @@ def main(args: list[str] | None = None) -> None:
         print("devise:", torch.cuda.get_device_name(torch.device(device)))
     elif device.lower() == "cpu":
         print("devise:", platform.processor())
+    device = torch.device(device)
     print("num threads:", torch.get_num_threads())
     sys.stdout.flush()
 
     generator = Generator(
         run_dir=parsed_args.run_dir,
         num_timesteps=parsed_args.num_timesteps,
-        compile=("cuda" in device.lower()),
         solver=parsed_args.solver,
         resize_factor=parsed_args.rescale_factor,
     )
+    if device.type == "cuda":
+        generator.flow.network.compile(fullgraph=True, dynamic=True)
     cond_data = showerdata.observables.read_observables_from_file(
         parsed_args.cond_file,
         observables=[

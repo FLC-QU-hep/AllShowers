@@ -9,9 +9,10 @@ from torch.nn.attention.flex_attention import (
 
 __all__ = ["FlexEncoderLayer", "Transformer", "compute_mask"]
 
-create_block_mask = torch.compile(create_block_mask)
+flex_attention = torch.compile(flex_attention, fullgraph=True, dynamic=True)
 
 
+@torch.compile(fullgraph=True, dynamic=True)
 def compute_mask(
     padding_mask: Tensor,
     layer: Tensor,
@@ -81,7 +82,10 @@ class FlexEncoderLayer(nn.Module):
         else:
             self.dropout = nn.Identity()
 
-        self.key_query_value = nn.Linear(dim_embedding, dim_embedding * 3)
+        self.key = nn.Linear(dim_embedding, dim_embedding)
+        self.query = nn.Linear(dim_embedding, dim_embedding)
+        self.value = nn.Linear(dim_embedding, dim_embedding)
+
         self.feedforward = nn.Sequential(
             nn.Linear(dim_embedding, dim_feedforward),
             activation_module,
@@ -96,16 +100,17 @@ class FlexEncoderLayer(nn.Module):
         x: Tensor,
         mask: BlockMask,
     ) -> Tensor:
-        key_query_value: Tensor = self.key_query_value(x)
-        key_query_value = key_query_value.view(
-            key_query_value.shape[0],
-            key_query_value.shape[1],
-            self.num_head,
-            3,
-            self.dim_head,
-        )
-        key_query_value = key_query_value.permute(3, 0, 2, 1, 4).contiguous()
-        key, query, value = key_query_value
+        key = self.key(x)
+        key = key.view(key.shape[0], key.shape[1], self.num_head, self.dim_head)
+        key = key.permute(0, 2, 1, 3).contiguous()
+
+        query = self.query(x)
+        query = query.view(query.shape[0], query.shape[1], self.num_head, self.dim_head)
+        query = query.permute(0, 2, 1, 3).contiguous()
+
+        value = self.value(x)
+        value = value.view(value.shape[0], value.shape[1], self.num_head, self.dim_head)
+        value = value.permute(0, 2, 1, 3).contiguous()
 
         x = flex_attention(
             query=query,
