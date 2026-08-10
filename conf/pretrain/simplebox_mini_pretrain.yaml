@@ -1,0 +1,67 @@
+# 100k-pretrain study (handoff 2026-06-25): minimal SimpleBox pretrain on a
+# 100k uniformly-random subset of the 4M dataset, to test whether transfer
+# still works anyway. Recipe is IDENTICAL to the reference 4M pretrain
+# (results/pretrain_SimpleBox/20260224_191122_SimpleBox-Pretrain) -- ONLY the
+# data changes. The model block MUST stay identical so weights/best.pt loads
+# into the downstream finetunes.
+#
+# Outputs land under <result_path>/from_scratch/ (Trainer adds the suffix because
+# there is no finetune.pretrained) -> best.pt at .../from_scratch/weights/best.pt
+run_name: SimpleBox-Pretrain-100k
+result_path: results/pretrain_SimpleBox_mini
+
+data:
+  # 100k random sample (seed 42) built by ../make_100k_subset.py
+  path: data/pretrain_simplebox/100kshowers_angles_random.h5
+  # no `stop`: the file already has exactly 100k showers
+
+  samples_energy_trafo:
+    - [Log, {alpha: 1.0e-6}]
+    - [StandardScaler, {shape: [1, 1]}]
+  samples_coordinate_trafo:
+    - [StandardScaler, {shape: [1, 1, 2]}]
+  cond_trafo:
+    - [Log, {alpha: 1.0e-6}]
+    - [StandardScaler, {shape: [1, 1]}]
+  sampling_frac_trafo:
+    - [Log, {alpha: 1.0e-6}]
+    - [StandardScaler, {shape: [1, 1]}]
+  nlayers_trafo:
+    - [MinMaxScaler, {shape: [1, 1], target_min: -1.0, target_max: 1.0}]
+
+  # SimpleBox has no OT target / noise file -> use Gaussian noise.
+  # (The reference 4M conf shows return_noise: True, but the 4M file has NO
+  #  `target` dataset and no OT-noise file exists, so it effectively trained
+  #  with Gaussian noise too. Keeping it explicit here avoids a KeyError.)
+  return_noise: False
+  return_direction: True
+  return_sampling_frac: True
+  return_nlayers: True
+
+  # val carved from WITHIN the 100k -> 90k train / 10k val
+  # (total Geant4 cost stays = 100k showers, the quantity the N* argument uses)
+  val_len: 10_000
+
+model:
+  num_layers: 45
+  dim_inputs: [3, 6, 6] # (x,y,e), 2xfourier, (energy, 3direction, SF, nlayers)
+  dim_embedding: 64
+  num_head: 4
+  num_blocks: 4
+  dim_feedforward: 256
+  num_points_cond: 512
+  activation: GELU
+  num_layer_cond: 4
+  num_particles: 1
+  flow_config:
+    frequencies: 3
+
+train:
+  num_epochs: 400
+  batch_size: 256
+  learning_rate: 1.e-3
+  optimizer: Ranger
+  scheduler: Cosine
+  weight_decay: 1.e-2
+  grad_clip: 0.2
+  matmul_precision: highest

@@ -1,0 +1,50 @@
+run_name: CNF-Transformer-SamplingFrac
+result_path: results/CNF-Transformer-SamplingFrac
+
+data:
+  path: data/1Mshowers.h5
+
+  samples_energy_trafo:
+    - [Log, {alpha: 1.0e-6}]
+    - [StandardScaler, {shape: [1, 1]}]
+  samples_coordinate_trafo:
+    - [StandardScaler, {shape: [1, 1, 2]}]
+  cond_trafo:
+    - [Log, {alpha: 1.0e-6}]
+    - [StandardScaler, {shape: [1, 1]}]
+  sampling_frac_trafo:
+    - [Log, {alpha: 1.0e-6}]
+    - [StandardScaler, {shape: [1, 1]}]
+  return_noise: True
+  # generator.py assembles cond = energy(1) + direction(3) + sampling_fraction(1):
+  # angles are appended unconditionally and SF is appended because dim_inputs[-1] > 1.
+  # Train with the same 5 conditioning scalars so cond_embedding is
+  # Linear(6 fourier + 5 = 11, 64) and matches the generator at inference.
+  return_direction: True
+  return_sampling_frac: True
+
+  val_len: 20
+
+model:
+  num_layers: 78 # data has 78 calorimeter layers (indices 0-77)
+  dim_inputs: [3, 6, 5] # (x,y,e); 6 fourier time; 5 cond scalars = energy + direction(3) + SF
+  dim_embedding: 64
+  num_head: 4
+  num_blocks: 4
+  dim_feedforward: 256
+  num_points_cond: 512
+  activation: GELU
+  num_layer_cond: 4
+  num_particles: 1
+  flow_config:
+    frequencies: 3
+
+train:
+  num_epochs: 200
+  batch_size: 256
+  learning_rate: 1.e-3
+  optimizer: Ranger
+  scheduler: Cosine
+  weight_decay: 1.e-2
+  grad_clip: 0.2
+  matmul_precision: highest

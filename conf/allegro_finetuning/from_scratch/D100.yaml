@@ -1,0 +1,70 @@
+run_name: ALLEGRO
+result_path: results/finetune_ALLEGRO
+data:
+  path: data/finetune_allegro/allegro_100k.h5
+  stop: 10100
+  samples_energy_trafo:
+    - - Log
+      - alpha: 1.0e-06
+    - - StandardScaler
+      - shape:
+          - 1
+          - 1
+  samples_coordinate_trafo:
+    - - StandardScaler
+      - shape:
+          - 1
+          - 1
+          - 2
+  cond_trafo:
+    - - Log
+      - alpha: 1.0e-06
+    - - StandardScaler
+      - shape:
+          - 1
+          - 1
+  sampling_frac_trafo:
+    - - Log
+      - alpha: 1.0e-06
+    - - StandardScaler
+      - shape:
+          - 1
+          - 1
+  nlayers_trafo:
+    - - MinMaxScaler
+      - shape:
+          - 1
+          - 1
+        target_min: -1.0
+        target_max: 1.0
+  return_noise: true
+  noise_path: data/finetune_allegro/allegro_ot_noise.h5
+  return_direction: true
+  return_sampling_frac: true
+  return_nlayers: true
+  val_len: 10000
+model:
+  num_layers: 90
+  dim_inputs:
+    - 3
+    - 6
+    - 6
+  dim_embedding: 64
+  num_head: 4
+  num_blocks: 4
+  dim_feedforward: 256
+  num_points_cond: 512
+  activation: GELU
+  num_layer_cond: 4
+  num_particles: 1
+  flow_config:
+    frequencies: 3
+train:
+  num_epochs: 500
+  batch_size: 256
+  learning_rate: 0.001
+  optimizer: Ranger
+  scheduler: Cosine
+  weight_decay: 0.01
+  grad_clip: 0.2
+  matmul_precision: highest

@@ -166,8 +166,9 @@ data
 notebooks
 results
 log
-run
 conf-test
 plots
 uv.lock
 cpp
+docs
+*.csv

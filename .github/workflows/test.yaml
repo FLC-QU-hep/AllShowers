@@ -1,6 +1,16 @@
 name: Python test
 
-on: [push]
+on:
+  push:
+    tags-ignore: ['**'] # run on branch pushes only, never on tags (e.g. archive/*)
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # FlexAttention's torch.compile path is prohibitively slow on CPU (the CI
+  # runner has no GPU) and stalls the fast-dev-run/generate smoke tests. Force
+  # the eager fallback: same code path, same numerics, no compilation. This only
+  # affects CI — production runs on GPU keep torch.compile enabled.
+  TORCHDYNAMO_DISABLE: "1"
 
 jobs:
   test:
@@ -21,14 +31,59 @@ jobs:
       - name: Download test data
         run: |
           mkdir data
-          curl -o data/showers.h5 https://syncandshare.desy.de/public.php/dav/files/tCMX2mFexPpmZC4
+          curl -o data/1Mshowers.h5 https://syncandshare.desy.de/public.php/dav/files/tCMX2mFexPpmZC4
+      - name: Add synthetic sampling_fraction for CI conditioning
+        # The public smoke-test file has no sampling_fraction, but the archive
+        # config trains with return_sampling_frac: True (so that the trained
+        # cond_embedding matches what generator.py assembles at inference:
+        # energy + direction(3) + sampling_fraction). Inject a constant, physically
+        # plausible top-level sampling_fraction so the training cond has the same 5
+        # scalars the generator will feed back in. CI-only data prep, not production.
+        run: |
+          python - <<'PY'
+          import h5py, numpy as np
+          with h5py.File("data/1Mshowers.h5", "a") as f:
+              n = f["energies"].shape[0]
+              if "sampling_fraction" in f:
+                  del f["sampling_fraction"]
+              f.create_dataset(
+                  "sampling_fraction",
+                  data=np.full((n, 1), 0.02, dtype=np.float32),
+              )
+          PY
       - name: OT matching
-        run: python allshowers/OT_match.py conf/transformer.yaml
+        run: python allshowers/OT_match.py conf/archive/transformer.yaml
       - name: Test with Unittest
         run: python -m unittest discover --verbose  -s test -p '*_test.py'
       - name: Fast development run
-        run: python allshowers/train.py -d cpu --fast-dev-run conf/transformer.yaml
+        run: python allshowers/train.py -d cpu --fast-dev-run conf/archive/transformer.yaml
       - name: Generate new data
         run: |
-          showerdata add-observables --overwrite data/showers.h5  # to ensure num_points_per_layer is present
-          python allshowers/generator.py --batch-size=1 --device=cpu -n 2 --num-timesteps 3 results/test data/showers.h5
+          # train.py writes the run under a strategy subdir (from_scratch/) but
+          # conf.yaml is written one level up; generator.py reads conf.yaml,
+          # weights/best.pt and preprocessing/trafos.pt flat from run_dir. Point
+          # run_dir at from_scratch/ and copy conf.yaml into it.
+          cp results/test/conf.yaml results/test/from_scratch/conf.yaml
+          # Build a scratch conditioning file (never mutate the tracked/downloaded
+          # data in place): add-observables (num_points_per_layer), promote it to
+          # the top level where generator.py reads it, and add sampling_fraction
+          # (generator.py unconditionally reads top-level num_points_per_layer and
+          # sampling_fraction from the cond file).
+          cp data/1Mshowers.h5 data/cond.h5
+          showerdata add-observables --overwrite data/cond.h5
+          python - <<'PY'
+          import h5py, numpy as np
+          with h5py.File("data/cond.h5", "a") as f:
+              npl = f["observables/num_points_per_layer"][:]
+              if "num_points_per_layer" in f:
+                  del f["num_points_per_layer"]
+              f.create_dataset("num_points_per_layer", data=npl)
+              n = f["energies"].shape[0]
+              if "sampling_fraction" in f:
+                  del f["sampling_fraction"]
+              f.create_dataset(
+                  "sampling_fraction",
+                  data=np.full((n, 1), 0.02, dtype=np.float32),
+              )
+          PY
+          python allshowers/generator.py --batch-size=1 --device=cpu -n 2 --num-timesteps 3 results/test/from_scratch data/cond.h5

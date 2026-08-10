@@ -1,10 +1,11 @@
 [project]
 name = "allshowers"
-version = "1.0.0"
+version = "1.1.0"
 description = "A point cloud CNF-Transformer to generate any Shower"
 readme = "README.md"
 authors = [
     {name = "Thorsten Buss", email = "Thorsten.Buss@uni-hamburg.de"},
+    {name = "Lorenzo Valente", email = "lorenzo.valente@uni-hamburg.de"},
 ]
 classifiers = [
     "Intended Audience :: Science/Research",
@@ -44,3 +45,8 @@ fix = true
 
 [tool.ruff.lint]
 extend-select = ["C4", "I", "SIM", "UP"]
+# Stylistic / intentional-style codes left as-is (compact one-liners, ambiguous
+# short names, module-level imports after a matplotlib backend set, dict() calls,
+# bare except in scripts, unused loop vars). Kept out of CI to match the codebase
+# style rather than rewrite it; real bugs (F-undefined, etc.) stay enforced.
+ignore = ["E701", "E702", "E741", "E402", "F841", "C408", "SIM108", "SIM115", "E722"]

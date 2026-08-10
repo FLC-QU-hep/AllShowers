@@ -1,6 +1,8 @@
 import argparse
 import datetime
+import math
 import os
+import random
 import signal
 import socket
 import sys
@@ -8,6 +10,7 @@ import time
 import warnings
 from typing import Any
 
+import numpy as np
 import torch
 import torch.distributed as dist
 import yaml
@@ -49,7 +52,9 @@ class Trainer:
         self.scheduler_name = conf["train"].get("scheduler", None)
         self.grad_clip = conf["train"].get("grad_clip", None)
         self.grad_accum = conf["train"].get("grad_accum", 1)
-        self.result_path = conf["result_path"]
+        finetune_path = conf.get("finetune", {}).get("pretrained")
+        suffix = "finetune" if finetune_path else "from_scratch"
+        self.result_path = os.path.join(conf["result_path"], suffix)
         self.batch_size = (self.batch_size + self.world_size - 1) // self.world_size
 
         self.checkpoint_file = self.get_path("checkpoints/last.pt")
@@ -100,6 +105,13 @@ class Trainer:
 
         if os.path.exists(self.checkpoint_file):
             self.load()
+        elif pretrained := conf.get("finetune", {}).get("pretrained"):
+            self.load_pretrained(pretrained)
+
+        freeze_blocks = conf.get("finetune", {}).get("freeze_blocks", 0)
+        if freeze_blocks > 0:
+            self.freeze_layers(freeze_blocks)
+            self.configure_optimizer()
 
     def init_model(self, model_config: dict[str, Any]) -> None:
         if "flow_config" in model_config:
@@ -119,28 +131,28 @@ class Trainer:
         optimizer_name = self.optimizer_name.lower().strip()
         if optimizer_name == "adamw":
             self.optimizer = optim.AdamW(
-                params=self.flow.network.parameters(),
+                params=[p for p in self.flow.network.parameters() if p.requires_grad],
                 lr=self.learning_rate,
                 betas=(0.9, 0.999),
                 weight_decay=self.weight_decay,
             )
         elif optimizer_name == "adam":
             self.optimizer = optim.Adam(
-                params=self.flow.network.parameters(),
+                params=[p for p in self.flow.network.parameters() if p.requires_grad],
                 lr=self.learning_rate,
                 betas=(0.9, 0.999),
                 weight_decay=self.weight_decay,
             )
         elif optimizer_name == "sgd":
             self.optimizer = optim.SGD(
-                params=self.flow.network.parameters(),
+                params=[p for p in self.flow.network.parameters() if p.requires_grad],
                 lr=self.learning_rate,
                 momentum=self.momentum,
                 weight_decay=self.weight_decay,
             )
         elif optimizer_name == "ranger":
             self.optimizer = RangerLite(
-                params=self.flow.network.parameters(),
+                params=[p for p in self.flow.network.parameters() if p.requires_grad],
                 lr=self.learning_rate,
                 betas=(0.95, 0.999),
                 eps=1e-5,
@@ -242,26 +254,36 @@ class Trainer:
                 losses = self.get_loss(batch)
                 loss = torch.mean(losses)
                 loss.backward()
-                self.grad_norms.append(
-                    get_total_norm(
-                        p.grad for p in self.flow.parameters() if p.grad is not None
-                    )
-                )
+                grad_norm = get_total_norm(
+                    p.grad for p in self.flow.parameters() if p.grad is not None
+                ).item()
+                self.grad_norms.append(grad_norm)
+                loss_val = loss.item()
+                finite = math.isfinite(grad_norm) and math.isfinite(loss_val)
                 if (step + 1) % self.grad_accum == 0:
-                    if self.grad_clip:
-                        clip_grad_norm_(self.flow.parameters(), self.grad_clip)
-                    self.optimizer.step()
-                    if self.scheduler_interval == "step" and self.scheduler is not None:
-                        self.scheduler.step()
+                    if finite:
+                        if self.grad_clip:
+                            clip_grad_norm_(self.flow.parameters(), self.grad_clip)
+                        self.optimizer.step()
+                        if (
+                            self.scheduler_interval == "step"
+                            and self.scheduler is not None
+                        ):
+                            self.scheduler.step()
                     self.optimizer.zero_grad()
-                train_loss_sum += loss.item() * len(losses)
-                train_loss_count += len(losses)
-                self.train_losses_batch.append(loss.item())
+                if finite:
+                    train_loss_sum += loss_val * len(losses)
+                    train_loss_count += len(losses)
+                self.train_losses_batch.append(loss_val)
                 self.learning_rates.append(self.optimizer.param_groups[0]["lr"])
             if self.scheduler_interval == "epoch" and self.scheduler is not None:
                 self.scheduler.step()
             if self.rank == 0:
-                self.train_losses.append(train_loss_sum / train_loss_count)
+                self.train_losses.append(
+                    train_loss_sum / train_loss_count
+                    if train_loss_count > 0
+                    else float("nan")
+                )
                 self.evaluate_and_save()
 
     def evaluate_and_save(self) -> None:
@@ -312,6 +334,14 @@ class Trainer:
         plt.ylabel("lr")
         plt.xlabel("step")
         plt.savefig(self.get_path(self.plot_folder + "lr.pdf"), bbox_inches="tight")
+        plt.close()
+
+        plt.semilogy(list(range(len(self.grad_norms))), self.grad_norms)
+        plt.ylabel("grad norm")
+        plt.xlabel("step")
+        plt.savefig(
+            self.get_path(self.plot_folder + "grad_norms.pdf"), bbox_inches="tight"
+        )
         plt.close()
 
     def __signal_handler(self, sig, frame):
@@ -421,11 +451,101 @@ class Trainer:
         self.min_val_loss = checkpoint["min_val_loss"]
         self.min_score = checkpoint["min_score"]
         self.optimizer.load_state_dict(checkpoint["optimizer"])
-        if self.scheduler is not None:
+        if self.scheduler is not None and not self.conf["train"].get(
+            "reset_scheduler", False
+        ):
             self.scheduler.load_state_dict(checkpoint["scheduler"])
+        elif self.scheduler is not None:
+            # Reset optimizer lr to base value so the fresh scheduler works
+            # (CosineAnnealingLR computes lr incrementally from current lr)
+            for pg, base_lr in zip(
+                self.optimizer.param_groups, self.scheduler.base_lrs
+            ):
+                pg["lr"] = base_lr
 
         print(
             f"[rank={self.rank}]: Loaded {self.checkpoint_file} at epoch {self.epoch}."
+        )
+        sys.stdout.flush()
+
+    def load_pretrained(self, pretrained_path: str) -> None:
+        """Load model weights only from a pretrained checkpoint (no optimizer/epoch state).
+        Remaps keys automatically to handle DDP/compile prefix mismatches."""
+        try:
+            checkpoint = torch.load(
+                pretrained_path, map_location=self.device, weights_only=True
+            )
+            weights = checkpoint.get("flow", checkpoint)
+            model_state = self.flow.state_dict()
+
+            # Strip DDP/compile wrappers (module., _orig_mod.) to get bare parameter names
+            def _bare(k):
+                return k.replace("module.", "").replace("_orig_mod.", "")
+
+            bare_to_model = {_bare(k): k for k in model_state}
+            remapped = {
+                bare_to_model[_bare(k)]: v
+                for k, v in weights.items()
+                if _bare(k) in bare_to_model
+            }
+            missing = [k for k in model_state if k not in remapped]
+            if missing:
+                raise RuntimeError(
+                    f"Could not remap {len(missing)} keys: {missing[:3]} ..."
+                )
+            # Resize mismatched tensors: copy overlapping region, fresh-init the rest
+            for key, pretrained_val in list(remapped.items()):
+                target_shape = model_state[key].shape
+                if pretrained_val.shape != target_shape:
+                    remapped[key] = util.copy_overlapping_into_fresh(
+                        pretrained_val, model_state[key]
+                    )
+                    if self.rank == 0:
+                        print(
+                            f"  [resize] {key}: {list(pretrained_val.shape)} → {list(target_shape)}"
+                        )
+            self.flow.load_state_dict(remapped, strict=True)
+            print(
+                f"[rank={self.rank}]: Loaded pretrained weights from {pretrained_path}."
+            )
+        except Exception as e:
+            print(
+                f"ERROR: Loading pretrained weights from {pretrained_path} FAILED: {e}"
+            )
+            print("Training will continue with RANDOM weights (pretrain not applied).")
+            raise RuntimeError(f"Pretrained weight loading failed: {e}") from e
+        sys.stdout.flush()
+
+    def freeze_layers(self, num_freeze_blocks: int) -> None:
+        """Freeze embeddings and the first num_freeze_blocks transformer blocks."""
+        network = self.flow.network
+        if isinstance(network, DDP):
+            network = network.module
+        if hasattr(network, "_orig_mod"):
+            network = network._orig_mod
+
+        for module in [
+            network.embedding,
+            network.layer_embedding,
+            network.cond_embedding,
+        ]:
+            for p in module.parameters():
+                p.requires_grad_(False)
+        if network.num_points_embedding is not None:
+            for p in network.num_points_embedding.parameters():
+                p.requires_grad_(False)
+        if network.particle_embedding is not None:
+            for p in network.particle_embedding.parameters():
+                p.requires_grad_(False)
+        for i in range(num_freeze_blocks):
+            for p in network.transformer_blocks[i].parameters():
+                p.requires_grad_(False)
+
+        n_frozen = sum(p.numel() for p in self.flow.parameters() if not p.requires_grad)
+        n_train = sum(p.numel() for p in self.flow.parameters() if p.requires_grad)
+        print(
+            f"Frozen {n_frozen} params, training {n_train} params "
+            f"(freeze_blocks={num_freeze_blocks})"
         )
         sys.stdout.flush()
 
@@ -464,10 +584,9 @@ def main(args: list[str] | None = None) -> None:
         dist.init_process_group(backend="nccl", timeout=datetime.timedelta(minutes=90))
         rank = dist.get_rank()
         world_size = dist.get_world_size()
-        device_id = rank % torch.cuda.device_count()
-        local_rank = device_id
-        device = f"cuda:{device_id}"
-        torch.cuda.set_device(device_id)
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        device = f"cuda:{local_rank}"
+        torch.cuda.set_device(local_rank)
     elif parsed_args.device:
         rank = 0
         world_size = 1
@@ -481,6 +600,25 @@ def main(args: list[str] | None = None) -> None:
         local_rank = 0
         device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
+
+    # Reproducible multi-seed (fixed-data band, e.g. D=100k where disjoint data
+    # blocks are impossible): seed weight-init + per-epoch shuffle. Per-rank stream
+    # is DECORRELATED across runs via seed = base_seed*world_size + rank, so distinct
+    # base seeds give fully disjoint per-rank RNG (independent band, not the
+    # under-dispersed base_seed+rank overlap). Active only if train.seed is set.
+    base_seed = conf.get("train", {}).get("seed")
+    if base_seed is not None:
+        seed = int(base_seed) * world_size + rank
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        if rank == 0:
+            print(
+                f"Training seed set: base={base_seed} -> per-rank base*world_size+rank "
+                f"({world_size} ranks)"
+            )
+        sys.stdout.flush()
 
     if "result_path" not in conf or parsed_args.fast_dev_run:
         if rank == 0:
@@ -500,7 +638,7 @@ def main(args: list[str] | None = None) -> None:
                 store.wait(["result_path"])
                 conf["result_path"] = store.get("result_path").decode()
 
-    torch.set_float32_matmul_precision("high")
+    torch.set_float32_matmul_precision(conf["train"].get("matmul_precision", "highest"))
 
     if rank == 0:
         print("node:", socket.gethostname())

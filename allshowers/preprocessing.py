@@ -11,6 +11,8 @@ __all__ = [
     "LogIt",
     "Affine",
     "StandardScaler",
+    "RobustScaler",
+    "MinMaxScaler",
     "compose",
 ]
 
@@ -140,6 +142,100 @@ class StandardScaler(Transformation):
 
     def inverse(self, x: torch.Tensor) -> torch.Tensor:
         return x * self.std + self.mean
+
+
+class RobustScaler(Transformation):
+    """Scales using median and IQR, robust to outliers."""
+
+    def __init__(self, shape: tuple[int, ...]) -> None:
+        super().__init__()
+        self.register_buffer("median", torch.zeros(shape))
+        self.register_buffer("iqr", torch.ones(shape))
+        self.shape = shape
+
+    def fit(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+        if mask is None:
+            mask = torch.ones(x.shape[:-1], dtype=torch.bool, device=x.device)
+
+        # Squeeze mask if it has trailing dimension
+        if mask.dim() == x.dim():
+            mask = mask.squeeze(-1)
+
+        # x shape: (batch, points, features) or (batch, features)
+        # mask shape: (batch, points) or (batch,)
+        n_features = x.shape[-1]
+        medians = []
+        iqrs = []
+
+        for i in range(n_features):
+            if x.dim() == 3:
+                valid = x[:, :, i][mask]
+            else:
+                valid = x[:, i][mask] if mask.dim() > 0 else x[:, i]
+
+            median = torch.quantile(valid.float(), 0.5)
+            q75 = torch.quantile(valid.float(), 0.75)
+            q25 = torch.quantile(valid.float(), 0.25)
+            iqr = q75 - q25
+            if iqr == 0:
+                iqr = torch.tensor(1.0, device=x.device)
+
+            medians.append(median)
+            iqrs.append(iqr)
+
+        self.median = torch.stack(medians).reshape(self.shape)
+        self.iqr = torch.stack(iqrs).reshape(self.shape)
+
+        return (x - self.median) / self.iqr
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return (x - self.median) / self.iqr
+
+    def inverse(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.iqr + self.median
+
+
+class MinMaxScaler(Transformation):
+    """Scales data to a target range [target_min, target_max]."""
+
+    def __init__(
+        self,
+        shape: tuple[int, ...],
+        target_min: float = 0.0,
+        target_max: float = 1.0,
+    ) -> None:
+        super().__init__()
+        self.register_buffer("data_min", torch.zeros(shape))
+        self.register_buffer("data_max", torch.ones(shape))
+        self.target_min = target_min
+        self.target_max = target_max
+        self.shape = shape
+
+    def fit(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+        if mask is None:
+            mask = torch.ones_like(x, dtype=torch.bool)
+        dims = tuple(torch.where(torch.tensor(self.shape) == 1)[0].tolist())
+        x_masked = torch.where(mask, x, torch.inf)
+        data_min = torch.amin(x_masked, dim=dims, keepdim=True)
+        x_masked = torch.where(mask, x, -torch.inf)
+        data_max = torch.amax(x_masked, dim=dims, keepdim=True)
+        # Avoid division by zero
+        data_range = data_max - data_min
+        data_range[data_range == 0] = 1
+        self.data_min = data_min
+        self.data_max = data_max
+        return self.forward(x)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        data_range = self.data_max - self.data_min
+        data_range[data_range == 0] = 1
+        x_scaled = (x - self.data_min) / data_range
+        return x_scaled * (self.target_max - self.target_min) + self.target_min
+
+    def inverse(self, x: torch.Tensor) -> torch.Tensor:
+        data_range = self.data_max - self.data_min
+        x_scaled = (x - self.target_min) / (self.target_max - self.target_min)
+        return x_scaled * data_range + self.data_min
 
 
 def compose(transformation: list[list[str | dict | list | None]] | None) -> Sequence:

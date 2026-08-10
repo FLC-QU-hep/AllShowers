@@ -8,13 +8,13 @@ from allshowers import util
 class TestDataUtil(unittest.TestCase):
     def test_setup_result_path(self):
         path1 = util.setup_result_path(
-            "test", "conf/transformer.yaml", fast_dev_run=True
+            "test", "conf/archive/transformer.yaml", fast_dev_run=True
         )
         path2 = util.setup_result_path(
-            "test", "conf/transformer.yaml", fast_dev_run=False
+            "test", "conf/archive/transformer.yaml", fast_dev_run=False
         )
         path3 = util.setup_result_path(
-            "test", "conf/transformer.yaml", fast_dev_run=False
+            "test", "conf/archive/transformer.yaml", fast_dev_run=False
         )
         self.assertTrue(path1 != path2)
         self.assertTrue(path2 != path3)

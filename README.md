@@ -1,12 +1,30 @@
-# AllShowers
-[![arXiv](https://img.shields.io/badge/arXiv-2601.11716-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2601.11716)
+# Transferable Fast Calorimeter Shower Generation via Multi-Geometry Pre-training
+
+[![arXiv](https://img.shields.io/badge/arXiv-2608.18233-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2608.18233)
 [![Python Version](https://img.shields.io/badge/Python_3.13-306998?logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch Version](https://img.shields.io/badge/PyTorch_2.8-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/FLC-QU-hep/AllShowers?tab=MIT-1-ov-file)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/FLC-QU-hep/AllShowers/pre_commit.yaml?label=pre-commit&logo=github)](https://github.com/FLC-QU-hep/AllShowers/actions/workflows/pre_commit.yaml)
 [![Tests](https://img.shields.io/github/actions/workflow/status/FLC-QU-hep/AllShowers/test.yaml?label=tests&logo=github)](https://github.com/FLC-QU-hep/AllShowers/actions/workflows/test.yaml)
 
-A conditional flow matching model with transformer architecture for calorimeter shower point clouds.
+Code release (`multi-geometry` branch) for the paper
+**Transferable Fast Calorimeter Shower Generation via Multi-Geometry Pre-training**
+(T. Buss, H. Day-Hall, F. Gaede, G. Kasieczka, K. Krüger, P. McKeown, L. Valente).
+The model is a single conditional flow matching model for calorimeter
+shower point clouds. A geometry-aware conditioning on the sampling fraction
+$f_s$ and the number of layers $N_\mathrm{layers}$ lets one backbone be
+pre-trained across many geometries and then transferred to unseen detectors
+with little target data. The pre-training pools are the synthetic SimpleBox
+family and the realistic LEMURS detectors. The held-out transfer target is
+FCCee-ALLEGRO. The code builds on the
+[AllShowers](https://arxiv.org/abs/2601.11716) backbone (this repository's
+`main` branch).
+
+The multi-geometry datasets are published in a single research-data record
+([DOI 10.25592/uhhfdm.19103](https://doi.org/10.25592/uhhfdm.19103)) and the
+pre-trained weights on Hugging Face
+([FLC-QU-hep/AllShowers-multi-geometry](https://huggingface.co/FLC-QU-hep/AllShowers-multi-geometry)).
+The configurations of the paper's pre-trainings and fine-tunings are in `conf/`.
 
 
 ## Steps to install and run the code
@@ -49,24 +67,24 @@ pre-commit install
 This will automatically format your code when you create a git commit.
 
 ### 3. Download datasets
-The full datasets is available on Zenodo. To download the full dataset (c.a. 77 GB), run:
-```bash
-mkdir data
-curl -o data/showers.h5 https://zenodo.org/records/18020348/files/geant4.h5?download=1
-```
+The multi-geometry datasets (the SimpleBox pool, the LEMURS detectors and the
+FCCee-ALLEGRO target) are published in a single research-data record:
+[DOI 10.25592/uhhfdm.19103](https://doi.org/10.25592/uhhfdm.19103). Download the
+files you need and place them under `data/` following the paths expected by the
+config files in `conf/`. The LEMURS pre-training pool is published as four
+per-detector files (`lemurs_*_1M.h5`). `conf/pretrain/lemurs_pretrain.yaml` expects them
+concatenated into a single `data/pretrain_lemurs/lemurs_4M.h5`, with the
+OT-matched latent points then generated locally via `allshowers/OT_match.py`. The dataset of the original single-detector paper remains
+available on [Zenodo](https://zenodo.org/records/18020348) and is documented on
+the `main` branch.
 
-You can also download a small dummy dataset for testing purposes instead:
-```bash
-mkdir data
-curl -o data/showers.h5 https://syncandshare.desy.de/public.php/dav/files/tCMX2mFexPpmZC4
-```
 You can generate optimal transport matched latent points with the `allshowers/OT_match.py` script. On MacOS you might need to deactivate file locking for HDF5 first. For the full dataset, the matching is computationally expensive. It will run parallel on multiple cores.
 ```bash
 # only needed on some filesystems (e.g. Apple File System)
 export HDF5_USE_FILE_LOCKING=FALSE
 
-# run OT matching
-python allshowers/OT_match.py conf/transformer.yaml
+# run OT matching (pick the config of the pool you train on)
+python allshowers/OT_match.py conf/pretrain/lemurs_pretrain.yaml
 ```
 The latent points will be stored in the same h5 file. Preprocessing and data file path will be read from the config file. If preprocessing transformations or data path change, you need to re-run the OT matching.
 
@@ -79,9 +97,30 @@ python -m unittest discover -s test -p "*_test.py" -v
 ```
 
 ### 5. Run training
-To start training with the default configuration, run:
+The `conf/` folder ships the configurations used in the multi-geometry paper,
+organised by study:
+- `conf/pretrain/`: the three pre-trainings (`simplebox_pretrain.yaml`,
+  `lemurs_pretrain.yaml`, `simplebox_mini_pretrain.yaml`)
+- `conf/allegro_finetuning/`: the transfer to FCCee-ALLEGRO, one folder per
+  arm of the paper's comparison (`from_simplebox/`, `from_lemurs/`,
+  `from_simplebox_mini/`, `from_scratch/`), each at the four dataset sizes
+  (`D100.yaml` to `D100k.yaml`)
+- `conf/cld_finetuning/`, `conf/odd_finetuning/`, `conf/par04_scipb_finetuning/`,
+  `conf/par04_siw_finetuning/`: the SimpleBox-pretrained fine-tuning on the
+  four Si/Sci detectors (`D*.yaml`) with the from-scratch baselines alongside
+  (`scratch_D*.yaml`), at the same four sizes
+- `conf/simplebox_finetuning/`: the held-out SimpleBox-like target, same
+  pattern.
+
+Every file is the as-run recipe of the corresponding paper run. The fine-tuning
+configs point to a pre-trained checkpoint in their `finetune` section. Set it
+to your own pre-training run or to the released weights. The `scratch_*` and
+`from_scratch/` configs are the corresponding baselines: same recipe without
+the `finetune` block and with `train.learning_rate` at `1.e-3`. When running several sizes of the same
+target, give each run its own `result_path` (the configs of one detector share
+it by default). For example, to pre-train on the LEMURS pool:
 ```bash
-python allshowers/train.py conf/transformer.yaml
+python allshowers/train.py conf/pretrain/lemurs_pretrain.yaml
 ```
 The code loads the entire dataset into memory to speed up training. If you do not have enough memory, you might need to reduce the size of the dataset or modify the data loading code to load data in batches from disk.
 For testing purposes, you can run a very short training with the flag `--fast-dev-run`. On a two core CPU, this still takes round about half an hour.
@@ -99,9 +138,9 @@ python allshowers/generator.py -n <num_samples> --num-timesteps 16 --solver midp
 here,
 - `<num_samples>` is the number of samples you want to generate
 - `<run_name>` is the name of the training run you want to use for generation, run `ls results/` to see all available runs
-- `<condition>` condition is a path to a `showerdata` file containing the incident particles and the number of points per layer, you can generate such a file with the [PointCountFM](https://github.com/FLC-QU-hep/PointCountFM) or use the test dataset to take this information from Geant4. If you use the geant4 data, you have to calculate the number of points per layer first: `showerdata add-observables data/showers.h5  --num-layers 78`.
+- `<condition>` is a path to a `showerdata` file containing the incident particles, the per-layer point counts (`num_points_per_layer`) and the sampling fraction (`sampling_fraction`). [PointCountFM](https://github.com/FLC-QU-hep/PointCountFM) produces such files. Alternatively both quantities can be taken from a Geant4 test file (see `.github/workflows/test.yaml` for a minimal example of preparing one with `showerdata add-observables`).
 
-The generated samples will be stored in `results/<run_name>/samples00.h5`.
+The generated samples will be stored in the run directory as `generated_<condition-name>.h5`.
 
 ### 7. Evaluate generated samples
 You can calculate observables from the generated samples with:
@@ -154,6 +193,12 @@ The configuration files are written in YAML format. You can find an example in `
 | `samples_coordinate_trafo` | list | List of transformations applied to point coordinates |
 | `cond_trafo` | list | List of transformations applied to incident energies |
 | `return_noise` | boolean | Whether to use OT matched latent space points (has to be stored in the data file) |
+| `noise_path` | string | Optional separate HDF5 file holding the OT matched latent points |
+| `return_direction` | boolean | Whether to condition on the incident-particle direction |
+| `return_sampling_frac` | boolean | Whether to condition on the sampling fraction $f_s$ (multi-geometry) |
+| `return_nlayers` | boolean | Whether to condition on the number of layers $N_\mathrm{layers}$ (multi-geometry) |
+| `sampling_frac_trafo` | list | Transformations applied to the sampling-fraction conditioner |
+| `nlayers_trafo` | list | Transformations applied to the number-of-layers conditioner |
 | `val_len` | integer | Validation set size |
 | `stop` | integer | Optional stop index when only a subset of the data should be used for training |
 
@@ -195,9 +240,16 @@ The configuration files are written in YAML format. You can find an example in `
 
 
 ---
-For questions/comments about the code contact: thorsten.buss@uni-hamburg.de
+For questions/comments about the code contact: thorsten.buss@uni-hamburg.de<br/>
+For questions about this `multi-geometry` branch contact: lorenzo.valente@uni-hamburg.de
 
-This code was written for the paper:
+The `multi-geometry` branch was written for the paper:
+
+**Transferable Fast Calorimeter Shower Generation via Multi-Geometry Pre-training**<br/>
+[https://arxiv.org/abs/2608.18233](https://arxiv.org/abs/2608.18233)<br/>
+*Thorsten Buss, Henry Day-Hall, Frank Gaede, Gregor Kasieczka, Katja Krüger, Peter McKeown and Lorenzo Valente*
+
+The AllShowers backbone was written for the paper:
 
 **AllShowers: One model for all calorimeter showers**<br/>
 [https://arxiv.org/abs/2601.11716](https://arxiv.org/abs/2601.11716)<br/>

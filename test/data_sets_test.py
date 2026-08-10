@@ -38,7 +38,7 @@ class TestDataSets(unittest.TestCase):
         self.assertTrue(torch.all(num_points_per_layer == expected))
 
     def test_load_and_prepare(self):
-        data = data_sets.load_and_prepare(path="data/showers.h5", stop=100)
+        data = data_sets.load_and_prepare(path="data/1Mshowers.h5", stop=100)
         self.assertEqual(type(data), dict)
         self.assertEqual(
             set(data.keys()),
@@ -55,7 +55,7 @@ class TestDataSets(unittest.TestCase):
 
     def test_load_and_prepare_with_noise(self):
         data = data_sets.load_and_prepare(
-            path="data/showers.h5",
+            path="data/1Mshowers.h5",
             stop=100,
             return_noise=True,
         )
@@ -76,7 +76,7 @@ class TestDataSets(unittest.TestCase):
 
     def test_get_data_loaders(self):
         config_dataset = {
-            "path": "data/showers.h5",
+            "path": "data/1Mshowers.h5",
             "samples_energy_trafo": [
                 ["Log", {}],
                 ["Affine", {"scale": 2.0, "shift": 1.0}],
@@ -116,23 +116,38 @@ class TestDataSets(unittest.TestCase):
             )
         self.assertEqual(
             set(trafos.keys()),
-            {"samples_energy_trafo", "samples_coordinate_trafo", "cond_trafo"},
+            {
+                "samples_energy_trafo",
+                "samples_coordinate_trafo",
+                "cond_trafo",
+                "sampling_frac_trafo",
+                "nlayers_trafo",
+            },
         )
         for element in trafos.values():
             self.assertTrue(isinstance(element, nn.Module))
 
     def test_load_data(self):
-        data = data_sets.load_data("data/showers.h5", start=0, stop=50)
+        data = data_sets.load_data("data/1Mshowers.h5", start=0, stop=50)
         self.assertEqual(type(data), dict)
         self.assertEqual(
-            set(data.keys()), {"shower", "energy", "direction", "pdg", "noise"}
+            set(data.keys()),
+            {
+                "shower",
+                "energy",
+                "direction",
+                "pdg",
+                "noise",
+                "sampling_frac",
+                "nlayers",
+            },
         )
         self.assertEqual(data["shower"].shape[0], 50)
         self.assertIsNone(data["noise"])
 
     def test_load_data_with_noise(self):
         data = data_sets.load_data(
-            "data/showers.h5", start=0, stop=50, return_noise=True
+            "data/1Mshowers.h5", start=0, stop=50, return_noise=True
         )
         self.assertIsNotNone(data["noise"])
         self.assertEqual(data["noise"].shape[0], 50)
@@ -166,20 +181,20 @@ class TestDataSets(unittest.TestCase):
 
     def test_load_and_prepare_with_direction(self):
         data = data_sets.load_and_prepare(
-            path="data/showers.h5",
+            path="data/1Mshowers.h5",
             stop=100,
             return_direction=True,
         )
         self.assertEqual(data["cond"].shape[1], 4)
 
     def test_load_and_prepare_mask_application(self):
-        data = data_sets.load_and_prepare(path="data/showers.h5", stop=50)
+        data = data_sets.load_and_prepare(path="data/1Mshowers.h5", stop=50)
         x_masked = data["x"][~data["mask"].repeat(1, 1, 3)]
         self.assertEqual(torch.count_nonzero(x_masked), 0)
 
     def test_get_data_loaders_split(self):
         config_dataset = {
-            "path": "data/showers.h5",
+            "path": "data/1Mshowers.h5",
             "stop": 100,
             "val_len": 20,
         }
@@ -189,22 +204,23 @@ class TestDataSets(unittest.TestCase):
         self.assertEqual(train_samples, 80)
         self.assertEqual(val_samples, 20)
 
-    def test_get_data_loaders_split_warning(self):
+    def test_get_data_loaders_large_val_len(self):
+        # val_len may exceed 50% of the data on purpose (low-data data-scaling
+        # regimes, e.g. 100/1000 train samples): it is honored verbatim, no clamp.
         config_dataset = {
-            "path": "data/showers.h5",
+            "path": "data/1Mshowers.h5",
             "stop": 40,
             "val_len": 30,
         }
-        with self.assertWarns(UserWarning):
-            train_loader, val_loader, _ = data_sets.get_data_loaders(config_dataset, 10)
+        train_loader, val_loader, _ = data_sets.get_data_loaders(config_dataset, 10)
         train_samples = sum(batch["x"].shape[0] for batch in train_loader)
         val_samples = sum(batch["x"].shape[0] for batch in val_loader)
-        self.assertEqual(train_samples, 20)
-        self.assertEqual(val_samples, 20)
+        self.assertEqual(train_samples, 10)
+        self.assertEqual(val_samples, 30)
 
     def test_get_data_loaders_transformations(self):
         config_dataset = {
-            "path": "data/showers.h5",
+            "path": "data/1Mshowers.h5",
             "samples_energy_trafo": [["Identity", {}]],
             "samples_coordinate_trafo": [["Identity", {}]],
             "cond_trafo": [["Identity", {}]],
@@ -214,7 +230,7 @@ class TestDataSets(unittest.TestCase):
         self.assertTrue(all(isinstance(t, nn.Module) for t in trafos.values()))
 
     def test_get_data_loaders_batch_properties(self):
-        config_dataset = {"path": "data/showers.h5", "stop": 25}
+        config_dataset = {"path": "data/1Mshowers.h5", "stop": 25}
         train_loader, _, _ = data_sets.get_data_loaders(config_dataset, 10)
         for batch in train_loader:
             self.assertLessEqual(batch["x"].shape[0], 10)
@@ -222,7 +238,7 @@ class TestDataSets(unittest.TestCase):
             break
 
     def test_get_data_loaders_distributed(self):
-        config_dataset = {"path": "data/showers.h5", "stop": 50, "val_len": 10}
+        config_dataset = {"path": "data/1Mshowers.h5", "stop": 50, "val_len": 10}
         with (
             patch("torch.distributed.barrier"),
             patch("builtins.print"),
@@ -257,12 +273,12 @@ class TestDataSets(unittest.TestCase):
         self.assertEqual(val_samples_1, 0)
 
     def test_load_and_prepare_layer_encoding(self):
-        data = data_sets.load_and_prepare(path="data/showers.h5", stop=50)
+        data = data_sets.load_and_prepare(path="data/1Mshowers.h5", stop=50)
         self.assertEqual(data["layer"].dtype, torch.int64)
         self.assertTrue(torch.all(data["layer"] >= 0))
 
     def test_load_and_prepare_num_points_default(self):
-        data = data_sets.load_and_prepare(path="data/showers.h5", stop=50)
+        data = data_sets.load_and_prepare(path="data/1Mshowers.h5", stop=50)
         self.assertEqual(data["num_points"].shape[0], 50)
         self.assertEqual(data["num_points"].dtype, torch.int32)
 

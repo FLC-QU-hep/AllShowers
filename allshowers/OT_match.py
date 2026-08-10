@@ -6,6 +6,7 @@ import time
 from collections.abc import Iterable, Iterator
 from typing import Any
 
+import h5py
 import numpy as np
 import numpy.typing as npt
 import ot
@@ -37,6 +38,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         "file",
         type=str,
         help="Path to config file.",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Path to output HDF5 file for OT noise. If not set, writes back to the source file.",
     )
     return parser.parse_args(args)
 
@@ -70,12 +77,21 @@ class PreProcessor:
     def __get_data(
         self, config: dict[str, Any]
     ) -> tuple[str, npt.NDArray[np.float32], tuple[int, ...]]:
-        data_shape = showerdata.get_file_shape(config["data"]["path"])
+        stop = config["data"].get("stop", 100_000)
+        fit_stop = min(config["data"].get("fit_stop", stop), stop)
         showers = showerdata.load(
             path=config["data"]["path"],
-            stop=100_000,
+            stop=fit_stop,
         )
-        return config["data"]["path"], showers.points[:, :, :4], data_shape
+        points = showers.points[:, :, :4]
+        # data_shape reflects the full dataset for noise allocation
+        if fit_stop < stop:
+            with h5py.File(config["data"]["path"], "r") as f:
+                file_shape = f["shape"][:]  # [n_samples, max_points, features]
+            data_shape = (stop, int(file_shape[1]), points.shape[2])
+        else:
+            data_shape = (points.shape[0], points.shape[1], points.shape[2])
+        return config["data"]["path"], points, data_shape
 
     def __call__(
         self,
@@ -147,18 +163,24 @@ def process_file(
     data_shape: tuple[int, ...],
     pre_processor: PreProcessor,
     batch_size: int = 1024,
+    output_file: str | None = None,
 ) -> None:
+    output_file = output_file or data_file
     num_batches = -(-data_shape[0] // batch_size)
     print_time("batch size:", batch_size)
     print_time("number of batches:", num_batches)
     sys.stdout.flush()
 
     noise_matcher = NoiseMatcher(pre_processor)
-    noise = np.empty((data_shape[0], 3, data_shape[1]), dtype=np.float32)
-    print_time(f"NoiseMatcher initialized. (noise shape={noise.shape})")
+    noise_shape = (data_shape[0], 3, data_shape[1])
+    noise_tmp = output_file + ".tmp.dat"
+    noise = np.memmap(noise_tmp, dtype=np.float32, mode="w+", shape=noise_shape)
+    print_time(f"NoiseMatcher initialized. (noise memmap shape={noise.shape})")
     sys.stdout.flush()
 
-    num_processes = n - 1 if (n := os.process_cpu_count()) else 1
+    num_processes = min(n - 1 if (n := os.process_cpu_count()) else 1, 32)
+    print_time(f"Using {num_processes} worker processes.")
+    sys.stdout.flush()
     with multiprocessing.Pool(num_processes) as pool:
         for i, batch in enumerate(
             pool.imap(
@@ -167,13 +189,22 @@ def process_file(
             )
         ):
             noise[i * batch_size : i * batch_size + len(batch)] = batch
+            if (i + 1) % 100 == 0:
+                noise.flush()
+                print_time(f"  batch {i + 1}/{num_batches}")
+                sys.stdout.flush()
+    noise.flush()
     print_time("All batches processed.")
     sys.stdout.flush()
 
-    noise = noise.transpose(0, 2, 1)
-    showerdata.save_target(noise, data_file, overwrite=True)
+    noise_t = noise.transpose(0, 2, 1)
+    with h5py.File(data_file, "r") as f:
+        num_points = f["num_points"][: data_shape[0]]
+    showerdata.save_target(noise_t, output_file, num_points=num_points, overwrite=True)
 
-    print_time(f"Noise saved successfully to {data_file} (shape={noise.shape}).")
+    del noise, noise_t
+    os.unlink(noise_tmp)
+    print_time(f"Noise saved successfully to {output_file}.")
     sys.stdout.flush()
 
 
@@ -191,11 +222,13 @@ def main(args: list[str] | None = None):
 
     print_time("Processing file")
     sys.stdout.flush()
+    output_file = parsed_args.output or pre_processor.file_path
     process_file(
         data_file=pre_processor.file_path,
         data_shape=pre_processor.data_shape,
         pre_processor=pre_processor,
         batch_size=1024,
+        output_file=output_file,
     )
 
 

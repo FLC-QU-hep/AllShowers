@@ -1,0 +1,51 @@
+run_name: SimpleBox
+result_path: results/finetune_SimpleBox
+
+data:
+  stop: 11000
+  path: data/finetune_simplebox/simplebox_100k.h5
+
+  samples_energy_trafo:
+    - [Log, {alpha: 1.0e-6}]
+    - [StandardScaler, {shape: [1, 1]}]
+  samples_coordinate_trafo:
+    - [StandardScaler, {shape: [1, 1, 2]}]
+  cond_trafo:
+    - [Log, {alpha: 1.0e-6}]
+    - [StandardScaler, {shape: [1, 1]}]
+  sampling_frac_trafo:
+    - [Log, {alpha: 1.0e-6}]
+    - [StandardScaler, {shape: [1, 1]}]
+  nlayers_trafo:
+    - [MinMaxScaler, {shape: [1, 1], target_min: -1.0, target_max: 1.0}]
+  return_noise: True
+  noise_path: data/finetune_simplebox/simplebox_ot_noise.h5
+  return_direction: True
+  return_sampling_frac: True
+  return_nlayers: True
+
+  val_len: 10_000
+
+model:
+  num_layers: 45
+  dim_inputs: [3, 6, 6]
+  dim_embedding: 64
+  num_head: 4
+  num_blocks: 4
+  dim_feedforward: 256
+  num_points_cond: 512
+  activation: GELU
+  num_layer_cond: 4
+  num_particles: 1
+  flow_config:
+    frequencies: 3
+
+train:
+  num_epochs: 500
+  batch_size: 256
+  learning_rate: 1.0e-03
+  optimizer: Ranger
+  scheduler: Cosine
+  weight_decay: 1.e-2
+  grad_clip: 0.2
+  matmul_precision: highest
