@@ -15,22 +15,22 @@ classifiers = [
 requires-python = "==3.13.*"
 dependencies = [
     "h5py~=3.16.0",
-    "matplotlib~=3.10.8",
-    "numpy~=2.4.2",
-    "pot==0.9.5",
+    "matplotlib~=3.11.0",
+    "numpy~=2.5.1",
+    "pot~=0.9.7",
     "pyyaml~=6.0.3",
-    "rangerlite~=1.0.0",
-    "rich~=14.3.3",
+    "rangerlite~=1.0.2",
+    "rich~=15.0.0",
     "showerdata~=0.6.1",
-    "torch~=2.11.0",
-    "pointcountfm @ git+https://github.com/FLC-QU-hep/PointCountFM_private@unified_sampling",
+    "torch~=2.13.0",
+    "pointcountfm @ git+ssh://git@github.com/FLC-QU-hep/PointCountFM_private@unified_sampling",
 ]
 
 [dependency-groups]
 dev = [
-    "ipykernel~=7.1.0",
-    "pre-commit~=4.5.0",
-    "ruff~=0.14.13.0",
+    "ipykernel~=7.3.0",
+    "pre-commit~=4.6.0",
+    "ruff~=0.15.21",
 ]
 
 [build-system]

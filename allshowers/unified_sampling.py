@@ -107,8 +107,7 @@ def generate_in_batches(
     for i, (energies_l, directions_l, pdg_codes_l) in enumerate(
         zip(split_energies, split_directions, split_pdg_codes)
     ):
-        if i == 2:
-            logging.info("starting third batch")
+        logging.info(f"starting batch {i + 1}")
         energies_l = energies_l.to(device)
         directions_l = directions_l.to(device)
         labels_l = to_labels(pdg_codes_l, pdg_list).to(device)

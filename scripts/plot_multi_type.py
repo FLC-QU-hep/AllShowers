@@ -335,7 +335,7 @@ def main(args: list[str] | None = None) -> None:
     config = ParticlePlotConfig(
         particles=particles,
         pdg_list=pdg_list,
-        colors=["blue", "red", "green", "brown"],
+        colors=["blue", "red", "brown", "green"],
     )
 
     fig, axes = plt.subplots(5, 3, height_ratios=[3, 1, 1, 1, 1], sharex="col")
