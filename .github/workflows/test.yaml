@@ -26,9 +26,9 @@ jobs:
         run: python allshowers/OT_match.py conf/transformer.yaml
       - name: Test with Unittest
         run: python -m unittest discover --verbose  -s test -p '*_test.py'
-      - name: Fast development run
-        run: python allshowers/train.py -d cpu --fast-dev-run conf/transformer.yaml
-      - name: Generate new data
-        run: |
-          showerdata add-observables --overwrite data/showers.h5  # to ensure num_points_per_layer is present
-          python allshowers/generator.py --batch-size=1 --device=cpu -n 2 --num-timesteps 3 results/test data/showers.h5
+    # - name: Fast development run
+    #   run: python allshowers/train.py -d cpu --fast-dev-run conf/transformer.yaml
+    # - name: Generate new data
+    #   run: |
+    #     showerdata add-observables --overwrite data/showers.h5  # to ensure num_points_per_layer is present
+    #     python allshowers/generator.py --batch-size=1 --device=cpu -n 2 --num-timesteps 3 results/test data/showers.h5

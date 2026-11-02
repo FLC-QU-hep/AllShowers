@@ -482,6 +482,10 @@ def main(args: list[str] | None = None) -> None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
 
+    if device.type == "cpu":
+        warnings.warn("Training on CPU currently not supported.")
+        sys.exit(1)
+
     if "result_path" not in conf or parsed_args.fast_dev_run:
         if rank == 0:
             conf["result_path"] = util.setup_result_path(

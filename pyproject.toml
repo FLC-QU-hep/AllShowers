@@ -23,7 +23,7 @@ dependencies = [
     "rich~=15.0.0",
     "showerdata~=0.6.1",
     "torch~=2.13.0",
-    "pointcountfm @ git+ssh://git@github.com/FLC-QU-hep/PointCountFM_private@unified_sampling",
+    "pointcountfm @ git+https://github.com/FLC-QU-hep/PointCountFM.git@unified_sampling",
 ]
 
 [dependency-groups]

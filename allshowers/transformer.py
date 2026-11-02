@@ -1,6 +1,5 @@
 import torch
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
 from torch.nn.attention.flex_attention import (
     BlockMask,
     create_block_mask,
